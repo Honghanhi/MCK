@@ -4,18 +4,14 @@ import cv2
 import numpy as np
 import os
 from ClassificationModule import Classifier
-from UTF8ClassificationModule import UTF8Classifier
 from HandTrackingModule import HandDetector
 
-# Khởi tạo Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Khởi tạo mô hình nhận diện ASL (hoặc thay thế bằng model bạn muốn)
+# Cấu hình mô hình ASL
 MODEL_PATH = "model_asl/keras_model.h5"
 LABELS_PATH = "model_asl/labels.txt"
-
-# Dò tìm tay và phân loại ký hiệu
 detector = HandDetector(maxHands=1)
 classifier = Classifier(MODEL_PATH, LABELS_PATH)
 offset = 20
@@ -23,23 +19,24 @@ imgSize = 300
 
 @app.route("/", methods=["GET"])
 def index():
-    return jsonify({"message": "Sign Language Recognition API is running!"})
+    return jsonify({"message": "ASL Recognition API is running."})
 
 @app.route("/predict", methods=["POST"])
 def predict():
     if "image" not in request.files:
-        return jsonify({"error": "Image file is required"}), 400
+        return jsonify({"error": "No image file provided."}), 400
 
     file = request.files["image"]
-    npimg = np.frombuffer(file.read(), np.uint8)
-    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    img_array = np.frombuffer(file.read(), np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
     hands = detector.findHands(img, draw=False)
     if not hands:
-        return jsonify({"error": "No hand detected"}), 200
+        return jsonify({"error": "No hand detected."}), 200
 
     hand = hands[0]
     x, y, w, h = hand["bbox"]
+
     try:
         imgCrop = img[y - offset:y + h + offset, x - offset:x + w + offset]
         aspectRatio = h / w
@@ -59,17 +56,26 @@ def predict():
             hGap = (imgSize - hCal) // 2
             imgWhite[hGap:hGap + hCal, :] = imgResize
 
-        prediction, index = classifier.getPrediction(imgWhite, draw=False)
+        predictions, index = classifier.getPrediction(imgWhite, draw=False)
         label = classifier.list_labels[index]
-        confidence = float(prediction[index])
+        confidence = float(predictions[index])
+
+        # Tạo danh sách tất cả nhãn với độ chính xác
+        all_predictions = [
+            {"label": lbl, "confidence": round(float(conf), 4)}
+            for lbl, conf in zip(classifier.list_labels, predictions)
+        ]
 
         return jsonify({
-            "label": label,
-            "confidence": round(confidence, 4)
+            "top_prediction": {
+                "label": label,
+                "confidence": round(confidence, 4)
+            },
+            "all_predictions": all_predictions
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Inference error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
