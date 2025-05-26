@@ -5,3 +5,4 @@ opencv-python==4.11.0.86
 flask==2.3.2
 Pillow==10.0.0
 imutils==0.5.4
+flask-cors==3.0.10
